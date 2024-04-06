@@ -1,12 +1,12 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    // associated_token::AssociatedToken,
+    associated_token::AssociatedToken,
     metadata::{
         create_metadata_accounts_v3,
         mpl_token_metadata::{accounts::Metadata as MetadataAccount, types::DataV2},
         CreateMetadataAccountsV3, Metadata,
     },
-    token::{self, Mint, mint_to, MintTo, Token, TokenAccount, Transfer},
+    token::{self, mint_to, Mint, MintTo, Token, TokenAccount, Transfer},
 };
 use solana_program::{pubkey, pubkey::Pubkey};
 
@@ -15,17 +15,54 @@ declare_id!("8EgjF9Ema9VpR2XFqsPt591n5rvgBDJqB1dGHdVJhFm9");
 const ADMIN_PUBKEY: Pubkey = pubkey!("4wvkHZTw9HiV23zko2FogZAU5sjErwE34dKMSz2x1P93");
 
 // const SUBMIT_FEE: u64 = 10000000; // 1 SOL
-// const TOKEN_NAME: &str = "SOL Hatch Token";
-// const TOKEN_SYMBOL: &str = "HAT";
-// const URI: &str = "https://arweave.net/123456";
+const TOKEN_NAME: &str = "SOL Hatch Token";
+const TOKEN_SYMBOL: &str = "HAT";
+const URI: &str = "https://arweave.net/123456";
 
 #[program]
 pub mod sol_hatcher {
 
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+    pub fn initialize_data(_ctx: Context<Initialize>) -> Result<()> {
         // init config and leaderboard
+        let seeds = b"hatcherToken";
+        let bump = _ctx.bumps.hatcher_token_mint;
+        let signer: &[&[&[u8]]] = &[&[seeds, &[bump]]];
+
+        // On-chain token metadata for the mint
+        let data_v2 = DataV2 {
+            name: TOKEN_NAME.to_string(),
+            symbol: TOKEN_SYMBOL.to_string(),
+            uri: URI.to_string(),
+            seller_fee_basis_points: 0,
+            creators: None,
+            collection: None,
+            uses: None,
+        };
+
+        // CPI Context
+        let cpi_ctx = CpiContext::new_with_signer(
+            _ctx.accounts.token_metadata_program.to_account_info(),
+            CreateMetadataAccountsV3 {
+                metadata: _ctx.accounts.metadata_account.to_account_info(), // the metadata account being created
+                mint: _ctx.accounts.hatcher_token_mint.to_account_info(), // the mint account of the metadata account
+                mint_authority: _ctx.accounts.hatcher_token_mint.to_account_info(), // the mint authority of the mint account
+                update_authority: _ctx.accounts.hatcher_token_mint.to_account_info(), // the update authority of the metadata account
+                payer: _ctx.accounts.admin.to_account_info(), // the payer for creating the metadata account
+                system_program: _ctx.accounts.system_program.to_account_info(), // the system program account, required when creating new accounts
+                rent: _ctx.accounts.rent.to_account_info(), // the rent sysvar account
+            },
+            signer, // pda signer
+        );
+
+        create_metadata_accounts_v3(
+            cpi_ctx, // cpi context
+            data_v2, // token metadata
+            true,    // is_mutable
+            true,    // update_authority_is_signer
+            None,    // collection details
+        )?;
 
         Ok(())
     }
@@ -51,7 +88,8 @@ pub mod sol_hatcher {
             _ctx.accounts.token_program.to_account_info(),
             MintTo {
                 mint: _ctx.accounts.hatcher_token_mint.to_account_info(), // mint account of token to mint
-                to: _ctx.accounts.winner.to_account_info(),
+                to: _ctx.accounts.winner_token_account.to_account_info(),
+                // to: AccountInfo::new(_leaderboard[0].creator),
                 // to: _ctx.accounts.(_leaderboard[0].creator) , // _ctx.accounts.player_token_account.to_account_info(), // player token account to mint to
                 authority: _ctx.accounts.hatcher_token_mint.to_account_info(), // pda is used as both address of mint and mint authority
             },
@@ -139,8 +177,18 @@ pub struct UpdateLeaderboard<'info> {
         bump,
     )]
     pub hatcher_token_mint: Account<'info, Mint>,
-    /// CHECK: Winner
-    pub winner: UncheckedAccount<'info>,
+
+    /// CHECK: winnerAccount
+    pub winner_account: UncheckedAccount<'info>,
+
+    #[account(
+      init_if_needed,
+      payer = admin,
+      associated_token::mint = hatcher_token_mint,
+      associated_token::authority = winner_account
+    )]
+    pub winner_token_account: Account<'info, TokenAccount>,
+    pub associated_token_program: Program<'info, AssociatedToken>
 }
 
 #[derive(Accounts)]
@@ -205,8 +253,31 @@ pub struct LeaderboardItem {
 pub struct Initialize<'info> {
     // Use ADMIN_PUBKEY as constraint, only the specified admin can invoke this instruction
     #[account(
-        mut,
-        address = ADMIN_PUBKEY
-    )]
+          mut,
+          address = ADMIN_PUBKEY
+      )]
     pub admin: Signer<'info>,
+
+    // The PDA is both the address of the mint account and the mint authority
+    #[account(
+          init,
+          seeds = [b"hatcherToken"],
+          bump,
+          payer = admin,
+          mint::decimals = 9,
+          mint::authority = hatcher_token_mint,
+      )]
+    pub hatcher_token_mint: Account<'info, Mint>,
+
+    ///CHECK: Using "address" constraint to validate metadata account address, this account is created via CPI in the instruction
+    #[account(
+          mut,
+          address = MetadataAccount::find_pda(&hatcher_token_mint.key()).0,
+      )]
+    pub metadata_account: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub token_metadata_program: Program<'info, Metadata>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
 }

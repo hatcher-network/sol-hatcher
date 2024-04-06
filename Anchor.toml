@@ -15,4 +15,8 @@ cluster = "Localnet"
 wallet = "/Users/zeppelin/.config/solana/id.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 2000 tests/**/*.ts"
+test = "yarn run ts-mocha -p ./tsconfig.json -t 2000 tests/**/sol-hatcher.ts"
+
+[[test.genesis]]
+address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"  
+program = "tests/metadata.so"

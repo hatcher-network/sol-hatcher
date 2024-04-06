@@ -6,3 +6,5 @@ target
 node_modules
 test-ledger
 .yarn
+.local_keys
+tests/metadata.so
