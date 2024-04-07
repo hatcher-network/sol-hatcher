@@ -154,7 +154,78 @@ pub mod sol_hatcher {
 
         Ok(())
     }
+
+    
+    pub fn mint_token(_ctx: Context<MintToken>, amount: u64) -> Result<()> {
+        // let mint_authority_seeds = &[/* PDA seeds */, &[/* PDA bump seed */]];
+        // let signer = &[&mint_authority_seeds[..]];
+        let seeds = b"hatcherToken";
+        let bump = _ctx.bumps.hatcher_token_mint;
+        let signer: &[&[&[u8]]] = &[&[seeds, &[bump]]];
+
+        let cpi_accounts = MintTo {
+            mint: _ctx.accounts.hatcher_token_mint.to_account_info(),
+            to: _ctx.accounts.user_token_account.to_account_info(),
+            authority: _ctx.accounts.hatcher_token_mint.to_account_info(),
+        };
+        let cpi_program = _ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+
+        token::mint_to(cpi_ctx, amount)
+    }
+
 }
+
+// create token mint and config
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    // Use ADMIN_PUBKEY as constraint, only the specified admin can invoke this instruction
+    #[account(
+          mut,
+          address = ADMIN_PUBKEY
+      )]
+    pub admin: Signer<'info>,
+
+    // The PDA is both the address of the mint account and the mint authority
+    #[account(
+        init,
+        seeds = [b"hatcherToken"],
+        bump,
+        payer = admin,
+        mint::decimals = 2,
+        mint::authority = hatcher_token_mint,
+    )]
+    pub hatcher_token_mint: Account<'info, Mint>,
+
+    ///CHECK: Using "address" constraint to validate metadata account address, this account is created via CPI in the instruction
+    #[account(
+          mut,
+          address = MetadataAccount::find_pda(&hatcher_token_mint.key()).0,
+      )]
+    pub metadata_account: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub token_metadata_program: Program<'info, Metadata>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+
+    #[account(
+        init,
+        payer = admin,
+        space = 1 + 32 + 4 + (8 + 8 + 32) * 10,
+        seeds = [b"hatchData", admin.key().as_ref()],
+        bump,
+      )]
+    pub hatch_data: Account<'info, HatchData>,
+
+    /// CHECK: init a singer info
+    #[account(
+        seeds = [b"vaultSigner"],
+        bump
+    )]
+    pub vault_signer: UncheckedAccount<'info>,
+}
+
 
 #[derive(Accounts)]
 pub struct UpdateLeaderboard<'info> {
@@ -248,7 +319,7 @@ pub struct WithdrawToken<'info> {
  */
 #[account]
 pub struct HatchData {
-    pub nonce: u8,
+    pub nonce: u8, // for vault signer PDA
     pub token_account: Pubkey,
     pub leaderboard: Vec<LeaderboardItem>,
 }
@@ -267,52 +338,34 @@ pub struct UserBalance {
     pub amount: u64,
 }
 
-// create token mint
 #[derive(Accounts)]
-pub struct Initialize<'info> {
-    // Use ADMIN_PUBKEY as constraint, only the specified admin can invoke this instruction
+pub struct MintToken<'info> {
     #[account(
-          mut,
-          address = ADMIN_PUBKEY
-      )]
+        mut,
+        address = ADMIN_PUBKEY
+    )]
     pub admin: Signer<'info>,
 
-    // The PDA is both the address of the mint account and the mint authority
-    #[account(
-          init,
-          seeds = [b"hatcherToken"],
-          bump,
-          payer = admin,
-          mint::decimals = 2,
-          mint::authority = hatcher_token_mint,
-      )]
-    pub hatcher_token_mint: Account<'info, Mint>,
-
-    ///CHECK: Using "address" constraint to validate metadata account address, this account is created via CPI in the instruction
-    #[account(
-          mut,
-          address = MetadataAccount::find_pda(&hatcher_token_mint.key()).0,
-      )]
-    pub metadata_account: UncheckedAccount<'info>,
-
-    pub token_program: Program<'info, Token>,
-    pub token_metadata_program: Program<'info, Metadata>,
-    pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
+    /// CHECK: User 
+    pub user: UncheckedAccount<'info>,
 
     #[account(
-        init,
+        init_if_needed,
         payer = admin,
-        space = 1 + 32 + 4 + (8 + 8 + 32) * 10,
-        seeds = [b"hatchData", admin.key().as_ref()],
-        bump,
-      )]
-    pub hatch_data: Account<'info, HatchData>,
+        associated_token::mint = hatcher_token_mint,
+        associated_token::authority = user,
+    )]
+    pub user_token_account: Account<'info, TokenAccount>,
 
-    /// CHECK: init a singer info
     #[account(
-        seeds = [b"vaultSigner"],
+        mut,
+        seeds = [b"hatcherToken"],
         bump
     )]
-    pub vault_signer: UncheckedAccount<'info>,
+    pub hatcher_token_mint: Account<'info, Mint>,
+
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
 }

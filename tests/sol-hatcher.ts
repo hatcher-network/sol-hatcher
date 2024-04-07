@@ -8,9 +8,11 @@ import {
   getOrCreateAssociatedTokenAccount,
   getAssociatedTokenAddressSync,
   transfer,
+  mintTo,
 } from "@solana/spl-token";
 import { testWallet } from "./lib/vars";
 import NodeWallet from "@coral-xyz/anchor/dist/cjs/nodewallet";
+import { Signer } from "@solana/web3.js";
 
 describe("sol-hatcher", () => {
   // Configure the client to use the local cluster.
@@ -222,6 +224,36 @@ describe("sol-hatcher", () => {
 
     const userBalanceData = await program.account.userBalance.fetch(testTokenBalanceInVault);
     console.log("Token Balance in vault after withdraw", userBalanceData);
+
+  })
+
+  it("Mint to", async () => {
+
+    const testTokenAccount = await getAssociatedTokenAddressSync(
+      hatcherTokenMintPDA,
+      testWallet.publicKey
+    )
+
+    let _balance = await connection.getTokenAccountBalance(testTokenAccount).then((res) => res.value);
+    console.log("Balance Before Mint:", _balance.uiAmount);
+
+    const [vaultSigner] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vaultSigner")],
+      program.programId
+    )
+
+    const tx = await program.methods.mintToken(new BN(70000000))
+      .accounts({
+        userTokenAccount: winnerTokenAccountPubkey,
+        user: testWallet.publicKey,
+        hatcherTokenMint: hatcherTokenMintPDA,
+      }).rpc()//
+
+    console.log("Mint to tx:", tx);
+
+    _balance = await connection.getTokenAccountBalance(testTokenAccount).then((res) => res.value);
+
+    console.log("Balance After Mint:", _balance.uiAmount);
 
   })
 
