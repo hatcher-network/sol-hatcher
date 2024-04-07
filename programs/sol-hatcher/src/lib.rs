@@ -15,7 +15,7 @@ declare_id!("8EgjF9Ema9VpR2XFqsPt591n5rvgBDJqB1dGHdVJhFm9");
 const ADMIN_PUBKEY: Pubkey = pubkey!("4wvkHZTw9HiV23zko2FogZAU5sjErwE34dKMSz2x1P93");
 
 // const SUBMIT_FEE: u64 = 10000000; // 1 SOL
-const TOKEN_NAME: &str = "SOL Hatch Token";
+const TOKEN_NAME: &str = "Sol Hatch Token";
 const TOKEN_SYMBOL: &str = "HAT";
 const URI: &str = "https://arweave.net/123456";
 
@@ -78,6 +78,9 @@ pub mod sol_hatcher {
         _ctx: Context<UpdateLeaderboard>,
         new_leaderboard: Vec<LeaderboardItem>,
     ) -> Result<()> {
+        // require admin identity
+        // assert_eq!(_ctx.accounts.admin === )
+
         // 1. Update leaderboard
         let _leaderboard = &mut _ctx.accounts.hatch_data.leaderboard;
         _leaderboard.clear();
@@ -128,17 +131,9 @@ pub mod sol_hatcher {
     pub fn withdraw_token(_ctx: Context<WithdrawToken>, amount: u64) -> ProgramResult {
         // transfer
         // token account
-
         if _ctx.accounts.user_balance_account.amount < amount {
             return Err(ProgramError::InsufficientFunds);
         }
-
-        // let seeds = &[
-        //     &_ctx.accounts.token_program.to_account_info().key.to_bytes()[..],
-        //     &[_ctx.accounts.hatch_data.nonce],
-        // ];
-
-        // let signer = &[&seeds[..]];
 
         let seeds = b"vaultSigner";
         let bump = _ctx.bumps.vault_signer;
@@ -164,15 +159,15 @@ pub mod sol_hatcher {
 #[derive(Accounts)]
 pub struct UpdateLeaderboard<'info> {
     #[account(
-      mut,
-      address = ADMIN_PUBKEY
-  )]
+        mut,
+        address = ADMIN_PUBKEY
+    )]
     pub admin: Signer<'info>,
 
     #[account(
-      mut,
-      seeds = [b"hatchData", admin.key().as_ref()],
-      bump,
+        mut,
+        seeds = [b"hatchData", admin.key().as_ref()],
+        bump,
     )]
     pub hatch_data: Account<'info, HatchData>,
     pub system_program: Program<'info, System>,
@@ -189,10 +184,10 @@ pub struct UpdateLeaderboard<'info> {
     pub winner_account: UncheckedAccount<'info>,
 
     #[account(
-      init_if_needed,
-      payer = admin,
-      associated_token::mint = hatcher_token_mint,
-      associated_token::authority = winner_account
+        init_if_needed,
+        payer = admin,
+        associated_token::mint = hatcher_token_mint,
+        associated_token::authority = winner_account
     )]
     pub winner_token_account: Account<'info, TokenAccount>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -288,7 +283,7 @@ pub struct Initialize<'info> {
           seeds = [b"hatcherToken"],
           bump,
           payer = admin,
-          mint::decimals = 9,
+          mint::decimals = 2,
           mint::authority = hatcher_token_mint,
       )]
     pub hatcher_token_mint: Account<'info, Mint>,
