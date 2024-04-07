@@ -63,6 +63,11 @@ pub mod sol_hatcher {
             true,    // update_authority_is_signer
             None,    // collection details
         )?;
+        
+        // init hatch data
+        let hatch_data = &mut _ctx.accounts.hatch_data;
+        hatch_data.leaderboard = [].to_vec();
+        hatch_data.nonce = _ctx.bumps.vault_signer;
 
         Ok(())
     }
@@ -103,16 +108,6 @@ pub mod sol_hatcher {
         Ok(())
     }
 
-    pub fn set_token_config(_ctx: Context<SetTokenConfig>, key_account: Pubkey) -> Result<Pubkey> {
-        // check caller identity
-        assert_eq!(_ctx.accounts.user.key(), ADMIN_PUBKEY);
-
-        // update in token account in HatchData
-        _ctx.accounts.hatch_data.token_account = key_account;
-
-        Ok(key_account)
-    }
-
     pub fn deposit_token(_ctx: Context<DepositToken>, amount: u64) -> Result<()> {
         let cpi_accounts = Transfer {
             from: _ctx.accounts.user_token_account.to_account_info(),
@@ -129,12 +124,17 @@ pub mod sol_hatcher {
     pub fn withdraw_token(_ctx: Context<WithdrawToken>, amount: u64) -> Result<()> {
         // transfer
         // token account
-        let seeds = &[
-            &_ctx.accounts.token_program.to_account_info().key.to_bytes()[..],
-            &[_ctx.accounts.hatch_data.nonce],
-        ];
 
-        let signer = &[&seeds[..]];
+        // let seeds = &[
+        //     &_ctx.accounts.token_program.to_account_info().key.to_bytes()[..],
+        //     &[_ctx.accounts.hatch_data.nonce],
+        // ];
+
+        // let signer = &[&seeds[..]];
+
+        let seeds = b"vaultSigner";
+        let bump = _ctx.accounts.hatch_data.nonce; // _ctx.bumps.vault;
+        let signer: &[&[&[u8]]] = &[&[seeds, &[bump]]];
 
         let cpi_accounts = Transfer {
             from: _ctx.accounts.vault_token_account.to_account_info(),
@@ -190,14 +190,6 @@ pub struct UpdateLeaderboard<'info> {
 }
 
 #[derive(Accounts)]
-pub struct SetTokenConfig<'info> {
-    #[account(mut)]
-    hatch_data: Account<'info, HatchData>,
-    #[account(mut)]
-    pub user: Signer<'info>,
-}
-
-#[derive(Accounts)]
 pub struct DepositToken<'info> {
     #[account(mut)]
     hatch_data: Account<'info, HatchData>,
@@ -244,8 +236,6 @@ pub struct LeaderboardItem {
     pub score: u64,
 }
 
-// #[derive(Accounts)]
-
 // create token mint
 #[derive(Accounts)]
 pub struct Initialize<'info> {
@@ -287,4 +277,11 @@ pub struct Initialize<'info> {
         bump,
       )]
     pub hatch_data: Account<'info, HatchData>,
+    
+    /// CHECK: init a singer info
+    #[account(
+        seeds = [b"vaultSigner"],
+        bump
+    )]
+    pub vault_signer: UncheckedAccount<'info>,
 }

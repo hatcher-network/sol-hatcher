@@ -54,6 +54,11 @@ describe("sol-hatcher", () => {
       .pdas()
       .metadata({ mint: hatcherTokenMintPDA })
 
+    const [vaultSigner] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vaultSigner")],
+      program.programId
+    )
+
     const tx = await program.methods
       .initializeData()
       .accounts({
@@ -61,10 +66,23 @@ describe("sol-hatcher", () => {
         metadataAccount: hatcherTokenMintMetadataPDA,
         tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
         hatchData: hatchData, // init
+        vaultSigner: vaultSigner,
       })
       .rpc()
-
+    
     console.log("Your transaction signature", tx)
+
+    // create token account with vault signer
+    const vaultTokenAccount = await getOrCreateAssociatedTokenAccount(
+      connection,
+      payer.payer,
+      hatcherTokenMintPDA,
+      program.programId
+      // vaultSigner, // not on curve
+    )
+
+    console.log("vaultTokenAccount: ", vaultTokenAccount.address.toString());
+
   })
 
   it("update leaderboard", async () => {
