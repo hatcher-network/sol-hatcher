@@ -60,6 +60,7 @@ describe("sol-hatcher", () => {
         hatcherTokenMint: hatcherTokenMintPDA,
         metadataAccount: hatcherTokenMintMetadataPDA,
         tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
+        hatchData: hatchData, // init
       })
       .rpc()
 
@@ -76,7 +77,6 @@ describe("sol-hatcher", () => {
     )
 
     console.log("winnerTokenAccountPubkey", winnerTokenAccountPubkey)
-
 
     const tx = await program.methods.updateLeaderboard([{
       agentId: new BN(8123481234),

@@ -161,9 +161,7 @@ pub struct UpdateLeaderboard<'info> {
     pub admin: Signer<'info>,
 
     #[account(
-      init,
-      payer = admin,
-      space = 1 + 32 + 4 + (8 + 8 + 32) * 10,
+      mut,
       seeds = [b"hatchData", admin.key().as_ref()],
       bump,
     )]
@@ -188,7 +186,7 @@ pub struct UpdateLeaderboard<'info> {
       associated_token::authority = winner_account
     )]
     pub winner_token_account: Account<'info, TokenAccount>,
-    pub associated_token_program: Program<'info, AssociatedToken>
+    pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
 #[derive(Accounts)]
@@ -280,4 +278,13 @@ pub struct Initialize<'info> {
     pub token_metadata_program: Program<'info, Metadata>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
+
+    #[account(
+        init,
+        payer = admin,
+        space = 1 + 32 + 4 + (8 + 8 + 32) * 10,
+        seeds = [b"hatchData", admin.key().as_ref()],
+        bump,
+      )]
+    pub hatch_data: Account<'info, HatchData>,
 }
