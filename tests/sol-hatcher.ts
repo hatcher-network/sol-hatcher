@@ -27,7 +27,6 @@ describe("sol-hatcher", () => {
   // const testWallet = anchor.workspace.SolHatcher.provider.wallet;
 
   const payer = anchor.workspace.SolHatcher.provider.wallet as NodeWallet;
-  // console.log("payer: ", payer.payer.secretKey);
 
   const [hatchData] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("hatchData"), provider.publicKey.toBuffer()],
@@ -43,9 +42,15 @@ describe("sol-hatcher", () => {
     program.programId
   )
 
-  const space = 0;
-
   let winnerTokenAccountPubkey: PublicKey = undefined;
+  let vaultTokenAccountPubkey: PublicKey = undefined;
+
+  it("Prepare for test", async () => {
+    // requestAirdrop for test wallet
+    console.log("Request airdrop to custom wallet");
+    const txSig = await connection.requestAirdrop(testWallet.publicKey, 10000000000000);
+    console.log("Airdrop finished. Tx: ", txSig);
+  })
 
   it("Initialize Token Mint", async () => {
     // PDA for the token metadata account for the reward token mint
@@ -54,29 +59,47 @@ describe("sol-hatcher", () => {
       .pdas()
       .metadata({ mint: hatcherTokenMintPDA })
 
+    const [vaultSigner] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vaultSigner")],
+      program.programId
+    )
+
     const tx = await program.methods
       .initializeData()
       .accounts({
         hatcherTokenMint: hatcherTokenMintPDA,
         metadataAccount: hatcherTokenMintMetadataPDA,
         tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
+        hatchData: hatchData, // init
+        vaultSigner: vaultSigner,
       })
       .rpc()
 
     console.log("Your transaction signature", tx)
+
+    // create token account with vault signer
+    vaultTokenAccountPubkey = await getOrCreateAssociatedTokenAccount(
+      connection,
+      payer.payer,
+      hatcherTokenMintPDA,
+      // program.programId
+      vaultSigner, // not on curve
+      true,
+    ).then(res => res.address);
+
+    console.log("vaultTokenAccount: ", vaultTokenAccountPubkey.toString());
+
   })
 
   it("update leaderboard", async () => {
 
     // create a creator account
-
     winnerTokenAccountPubkey = getAssociatedTokenAddressSync(
       hatcherTokenMintPDA,
       testWallet.publicKey
     )
 
     console.log("winnerTokenAccountPubkey", winnerTokenAccountPubkey)
-
 
     const tx = await program.methods.updateLeaderboard([{
       agentId: new BN(8123481234),
@@ -95,10 +118,9 @@ describe("sol-hatcher", () => {
     const data = await program.account.hatchData.fetch(hatchData);
     console.log("data", data);
 
-    // const wallet_balance = await 
   })
 
-  it("Check balance and transfer", async () => {
+  it("Check balance and transfer: test_wallet to payer, 500", async () => {
     let _balance = await connection.getTokenAccountBalance(winnerTokenAccountPubkey).then((res) => res.value);
     console.log("User Balance - Before Transfer", _balance.uiAmount);
 
@@ -130,4 +152,77 @@ describe("sol-hatcher", () => {
     console.log("User Balance - After Transfer", _balance.uiAmount);
 
   })
+
+
+  it("Deposit token: test_wallet, 10000 ", async () => {
+
+    const testTokenAccount = await getOrCreateAssociatedTokenAccount(
+      connection,
+      testWallet,
+      hatcherTokenMintPDA,
+      testWallet.publicKey,
+    )
+
+    const [testTokenBalanceInVault] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("userBalance"), testWallet.publicKey.toBuffer()],
+      program.programId
+    )
+
+    console.log("All ATA Generated")
+
+    let tx = await program.methods.depositToken(new BN(10000)).accounts({
+      hatchData: hatchData,
+      vaultTokenAccount: vaultTokenAccountPubkey,
+      // user: payer.payer.publicKey,
+      user: testWallet.publicKey,
+      userTokenAccount: testTokenAccount.address,
+      userBalanceAccount: testTokenBalanceInVault,
+    }).signers([testWallet]).rpc();
+
+    console.log("Transfer txSig: ", tx);
+
+    let userBalanceData = await program.account.userBalance.fetch(testTokenBalanceInVault);
+    console.log("Token Balance in vault - After deposit", userBalanceData);
+
+    const _balance = await connection.getTokenAccountBalance(testTokenAccount.address).then((res) => res.value);
+
+    console.log("User Balance - After Deposit", _balance.uiAmount);
+
+  })
+
+  it("Withdraw token", async () => {
+
+    const testTokenAccountPubkey = await getAssociatedTokenAddressSync(
+      hatcherTokenMintPDA,
+      testWallet.publicKey
+    )
+
+    const [testTokenBalanceInVault] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("userBalance"), testWallet.publicKey.toBuffer()],
+      program.programId
+    )
+
+    const [vaultSigner] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vaultSigner")],
+      program.programId
+    )
+
+    const tx = await program.methods.withdrawToken(new BN(5000)).accounts({
+      hatchData: hatchData,
+      vaultTokenAccount: vaultTokenAccountPubkey,
+      user: testWallet.publicKey,
+      userTokenAccount: testTokenAccountPubkey,
+      userBalanceAccount: testTokenBalanceInVault,
+      // vaultSigner: hatcherTokenVaultATA,
+      vaultSigner: vaultSigner, // program.programId
+    }).signers([testWallet]).rpc();
+    // .transaction().serialize({requireAllSignatures: false, verifySignatures: false})
+
+    console.log("Transfer txSig: ", tx);
+
+    const userBalanceData = await program.account.userBalance.fetch(testTokenBalanceInVault);
+    console.log("Token Balance in vault after withdraw", userBalanceData);
+
+  })
+
 });
