@@ -22,6 +22,8 @@ const URI: &str = "https://arweave.net/123456";
 #[program]
 pub mod sol_hatcher {
 
+    use solana_program::entrypoint::ProgramResult;
+
     use super::*;
 
     pub fn initialize_data(_ctx: Context<Initialize>) -> Result<()> {
@@ -63,7 +65,7 @@ pub mod sol_hatcher {
             true,    // update_authority_is_signer
             None,    // collection details
         )?;
-        
+
         // init hatch data
         let hatch_data = &mut _ctx.accounts.hatch_data;
         hatch_data.leaderboard = [].to_vec();
@@ -100,7 +102,7 @@ pub mod sol_hatcher {
             },
             signer, // pda signer
         );
-        let amount = (10000u64)
+        let amount = (1000000u64)
             .checked_mul(10u64.pow(_ctx.accounts.hatcher_token_mint.decimals as u32))
             .unwrap();
         mint_to(cpi_ctx, amount)?;
@@ -118,12 +120,18 @@ pub mod sol_hatcher {
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
         token::transfer(cpi_ctx, amount)?;
 
+        _ctx.accounts.user_balance_account.amount += amount;
+
         Ok(())
     }
 
-    pub fn withdraw_token(_ctx: Context<WithdrawToken>, amount: u64) -> Result<()> {
+    pub fn withdraw_token(_ctx: Context<WithdrawToken>, amount: u64) -> ProgramResult {
         // transfer
         // token account
+
+        if _ctx.accounts.user_balance_account.amount < amount {
+            return Err(ProgramError::InsufficientFunds);
+        }
 
         // let seeds = &[
         //     &_ctx.accounts.token_program.to_account_info().key.to_bytes()[..],
@@ -133,7 +141,8 @@ pub mod sol_hatcher {
         // let signer = &[&seeds[..]];
 
         let seeds = b"vaultSigner";
-        let bump = _ctx.accounts.hatch_data.nonce; // _ctx.bumps.vault;
+        let bump = _ctx.bumps.vault_signer;
+        // let bump = _ctx.accounts.hatch_data.nonce; // _ctx.bumps.vault;
         let signer: &[&[&[u8]]] = &[&[seeds, &[bump]]];
 
         let cpi_accounts = Transfer {
@@ -200,6 +209,16 @@ pub struct DepositToken<'info> {
     #[account(mut)]
     pub user_token_account: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
+
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = 8 + 8 + 32,
+        seeds = [b"userBalance", user.key().as_ref()],
+        bump,
+    )]
+    pub user_balance_account: Account<'info, UserBalance>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -213,8 +232,19 @@ pub struct WithdrawToken<'info> {
     #[account(mut)]
     pub user_token_account: Account<'info, TokenAccount>,
     /// CHECK: This is not dangerous because we don't read or write from this account
-    pub vault_signer: AccountInfo<'info>,
+    #[account(
+        seeds = [b"vaultSigner"],
+        bump
+    )]
+    pub vault_signer: UncheckedAccount<'info>,
     pub token_program: Program<'info, Token>,
+
+    #[account(
+        mut,
+        seeds = [b"userBalance", user.key().as_ref()],
+        bump,
+    )]
+    pub user_balance_account: Account<'info, UserBalance>,
 }
 
 /**
@@ -234,6 +264,12 @@ pub struct LeaderboardItem {
     pub agent_id: u64,
     pub creator: Pubkey,
     pub score: u64,
+}
+
+#[account]
+pub struct UserBalance {
+    pub user: Pubkey,
+    pub amount: u64,
 }
 
 // create token mint
@@ -277,7 +313,7 @@ pub struct Initialize<'info> {
         bump,
       )]
     pub hatch_data: Account<'info, HatchData>,
-    
+
     /// CHECK: init a singer info
     #[account(
         seeds = [b"vaultSigner"],
